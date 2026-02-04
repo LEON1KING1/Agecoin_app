@@ -88,24 +88,33 @@ if(explode(' ', $msg)[0] === '/start' and is_numeric(explode(' ', $msg)[1]) and 
     }
 
     // basic anti-abuse: prevent mass automated invites (per inviter)
-    $rlf = sys_get_temp_dir() . "/agecoin_invite_" . $inviter_id;
-    $now = time();
-    $invites = [];
-    if (is_readable($rlf)) {
-        $raw = file_get_contents($rlf);
-        $invites = $raw ? json_decode($raw, true) : [];
-        if (!is_array($invites)) $invites = [];
-        $invites = array_filter($invites, function($t) use($now){ return ($t > $now - 3600); });
-    }
-    if (count($invites) > 30) {
-        LampStack('sendMessage',['chat_id' => $from_id, 'text' => '<b>Invite rate limit</b>', 'parse_mode' => 'HTML']);
-        $MySQLi->close();
-        die;
-    }
+    if (function_exists('agecoin_rate_limited')) {
+        if (agecoin_rate_limited('invite_' . $inviter_id, 30, 3600)) {
+            LampStack('sendMessage',['chat_id' => $from_id, 'text' => '<b>Invite rate limit</b>', 'parse_mode' => 'HTML']);
+            $MySQLi->close();
+            exit;
+        }
+    } else {
+        // fallback to file-based limiter
+        $rlf = sys_get_temp_dir() . "/agecoin_invite_" . $inviter_id;
+        $now = time();
+        $invites = [];
+        if (is_readable($rlf)) {
+            $raw = file_get_contents($rlf);
+            $invites = $raw ? json_decode($raw, true) : [];
+            if (!is_array($invites)) $invites = [];
+            $invites = array_filter($invites, function($t) use($now){ return ($t > $now - 3600); });
+        }
+        if (count($invites) > 30) {
+            LampStack('sendMessage',['chat_id' => $from_id, 'text' => '<b>Invite rate limit</b>', 'parse_mode' => 'HTML']);
+            $MySQLi->close();
+            exit;
+        }
 
-    $invites[] = $now;
-    if (file_put_contents($rlf, json_encode($invites), LOCK_EX) === false) {
-        error_log('Failed to write invite-rate file: ' . $rlf);
+        $invites[] = $now;
+        if (file_put_contents($rlf, json_encode($invites), LOCK_EX) === false) {
+            error_log('Failed to write invite-rate file: ' . $rlf);
+        }
     }
 
     $time = time();

@@ -6,10 +6,18 @@ include '../../bot/functions.php';
 $MySQLi = new mysqli('localhost',$DB['username'],$DB['password'],$DB['dbname']);
 $MySQLi->query("SET NAMES 'utf8'");
 $MySQLi->set_charset('utf8mb4');
-if ($MySQLi->connect_error) die;
+if ($MySQLi->connect_error) {
+    error_log('MySQL connection error (api/rewards): ' . $MySQLi->connect_error);
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'database connection failed']);
+    exit;
+}
 function ToDie($MySQLi){
+    error_log('MySQL error (api/rewards): ' . $MySQLi->error);
     $MySQLi->close();
-    die;
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'internal server error']);
+    exit;
 }
 
 $user_id = isset($_REQUEST['user_id']) ? (int)$_REQUEST['user_id'] : 0;

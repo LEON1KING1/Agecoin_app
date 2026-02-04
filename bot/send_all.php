@@ -6,7 +6,10 @@ ini_set('max_execution_time', 30);
 $MySQLi = new mysqli('localhost',$DB['username'],$DB['password'],$DB['dbname']);
 $MySQLi->query("SET NAMES 'utf8'");
 $MySQLi->set_charset('utf8mb4');
-if ($MySQLi->connect_error) die;
+if ($MySQLi->connect_error) {
+    error_log('MySQL connection error (bot/send_all): ' . $MySQLi->connect_error);
+    exit;
+} 
 
 
 $getDB = mysqli_fetch_assoc(mysqli_query($MySQLi, "SELECT * FROM `sending` LIMIT 1"));

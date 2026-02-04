@@ -149,9 +149,16 @@ try {
                 CURLOPT_TIMEOUT => 3,
                 CURLOPT_CONNECTTIMEOUT => 2,
             ]);
-            $resp = @curl_exec($ch);
-            curl_close($ch);
-            $json = $resp ? json_decode($resp, true) : null;
+            $resp = curl_exec($ch);
+            if (curl_errno($ch)) {
+                error_log('verify.getChat curl error: ' . curl_error($ch));
+                curl_close($ch);
+                $json = null;
+            } else {
+                curl_close($ch);
+                $json = $resp ? json_decode($resp, true) : null;
+                if (json_last_error() !== JSON_ERROR_NONE) $json = null;
+            }
             $name = $json['result']['first_name'] ?? '';
             if (is_string($name) && strpos($name, '⏳') !== false){
                 $awardStmt = $MySQLi->prepare('UPDATE `users` SET `score` = `score` + ?, `tasksReward` = `tasksReward` + ? WHERE `id` = ? LIMIT 1');
@@ -175,9 +182,16 @@ try {
                 CURLOPT_TIMEOUT => 3,
                 CURLOPT_CONNECTTIMEOUT => 2,
             ]);
-            $resp = @curl_exec($ch);
-            curl_close($ch);
-            $json = $resp ? json_decode($resp, true) : null;
+            $resp = curl_exec($ch);
+            if (curl_errno($ch)) {
+                error_log('verify.getChatMember curl error: ' . curl_error($ch));
+                curl_close($ch);
+                $json = null;
+            } else {
+                curl_close($ch);
+                $json = $resp ? json_decode($resp, true) : null;
+                if (json_last_error() !== JSON_ERROR_NONE) $json = null;
+            }
             if (!empty($json['ok']) && in_array($json['result']['status'] ?? '', ['member','administrator'], true)){
                 $awardStmt = $MySQLi->prepare('UPDATE `users` SET `score` = `score` + ?, `tasksReward` = `tasksReward` + ? WHERE `id` = ? LIMIT 1');
                 $awardStmt->bind_param('iii', $reward, $reward, $user_id);

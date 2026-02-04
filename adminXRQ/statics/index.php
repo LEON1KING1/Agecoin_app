@@ -22,32 +22,50 @@ function ToDie($MySQLi){
 
 
 
-$res = $MySQLi->query("SELECT `id` FROM `users`");
-$totalPlayers = $res ? $res->num_rows : 0; 
+// try short-lived file cache for expensive aggregate stats
+$__stats_cache_key = 'admin_stats_v1';
+$__stats_cached = function_exists('agecoin_cache_get') ? agecoin_cache_get($__stats_cache_key) : null;
+if ($__stats_cached && is_array($__stats_cached)) {
+    extract($__stats_cached, EXTR_PREFIX_ALL, 'cached');
+    $totalPlayers = $cached_totalPlayers;
+    $dailyPlayers = $cached_dailyPlayers;
+    $weeklyPlayers = $cached_weeklyPlayers;
+    $monthlyPlayers = $cached_monthlyPlayers;
+    $onlinePlayers = $cached_onlinePlayers;
+} else {
+    $res = $MySQLi->query("SELECT `id` FROM `users`");
+    $totalPlayers = $res ? $res->num_rows : 0; 
 
+    $start_timestamp = time() - (1 * 24 * 60 * 60);
+    $end_timestamp = time();
+    $res = $MySQLi->query("SELECT `id` FROM `users` WHERE `joinDate` BETWEEN $start_timestamp AND $end_timestamp");
+    $dailyPlayers = $res ? $res->num_rows : 0; 
 
-$start_timestamp = time() - (1 * 24 * 60 * 60);
-$end_timestamp = time();
-$res = $MySQLi->query("SELECT `id` FROM `users` WHERE `joinDate` BETWEEN $start_timestamp AND $end_timestamp");
-$dailyPlayers = $res ? $res->num_rows : 0; 
+    $start_timestamp = time() - (7 * 24 * 60 * 60);
+    $end_timestamp = time();
+    $res = $MySQLi->query("SELECT `id` FROM `users` WHERE `joinDate` BETWEEN $start_timestamp AND $end_timestamp");
+    $weeklyPlayers = $res ? $res->num_rows : 0; 
 
+    $start_timestamp = time() - (30 * 24 * 60 * 60);
+    $end_timestamp = time();
+    $res = $MySQLi->query("SELECT `id` FROM `users` WHERE `joinDate` BETWEEN $start_timestamp AND $end_timestamp");
+    $monthlyPlayers = $res ? $res->num_rows : 0; 
 
-$start_timestamp = time() - (7 * 24 * 60 * 60);
-$end_timestamp = time();
-$res = $MySQLi->query("SELECT `id` FROM `users` WHERE `joinDate` BETWEEN $start_timestamp AND $end_timestamp");
-$weeklyPlayers = $res ? $res->num_rows : 0; 
+    $start_timestamp = time() - (24 * 60 * 60);
+    $end_timestamp = time();
+    $res = $MySQLi->query("SELECT `id` FROM `users` WHERE `dailyRewardDate` BETWEEN $start_timestamp AND $end_timestamp");
+    $onlinePlayers = $res ? $res->num_rows : 0; 
 
-
-$start_timestamp = time() - (30 * 24 * 60 * 60);
-$end_timestamp = time();
-$res = $MySQLi->query("SELECT `id` FROM `users` WHERE `joinDate` BETWEEN $start_timestamp AND $end_timestamp");
-$monthlyPlayers = $res ? $res->num_rows : 0; 
-
-
-$start_timestamp = time() - (24 * 60 * 60);
-$end_timestamp = time();
-$res = $MySQLi->query("SELECT `id` FROM `users` WHERE `dailyRewardDate` BETWEEN $start_timestamp AND $end_timestamp");
-$onlinePlayers = $res ? $res->num_rows : 0; 
+    if (function_exists('agecoin_cache_set')) {
+        agecoin_cache_set($__stats_cache_key, [
+            'totalPlayers' => $totalPlayers,
+            'dailyPlayers' => $dailyPlayers,
+            'weeklyPlayers' => $weeklyPlayers,
+            'monthlyPlayers' => $monthlyPlayers,
+            'onlinePlayers' => $onlinePlayers,
+        ], 30);
+    }
+} 
 
 
 $res = $MySQLi->query("SELECT SUM(`score`) AS sum FROM `users`");

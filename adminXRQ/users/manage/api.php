@@ -5,26 +5,39 @@ include '../../../bot/functions.php';
 $MySQLi = new mysqli('localhost',$DB['username'],$DB['password'],$DB['dbname']);
 $MySQLi->query("SET NAMES 'utf8'");
 $MySQLi->set_charset('utf8mb4');
-if ($MySQLi->connect_error) die;
-function ToDie($MySQLi){
-$MySQLi->close();
-die;
+if ($MySQLi->connect_error) {
+    error_log('MySQL connection error (admin users manage api): ' . $MySQLi->connect_error);
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'database connection failed']);
+    exit;
 }
+function ToDie($MySQLi){
+    error_log('MySQL error (admin users manage api): ' . $MySQLi->error);
+    $MySQLi->close();
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'internal server error']);
+    exit;
+} 
 
 
 $user_id = isset($_REQUEST['q']) ? (int)$_REQUEST['q'] : 0;
 $action = $_REQUEST['action'] ?? '';
 
-// optional admin token enforcement (set AGECOIN_ADMIN_TOKEN in env to enable)
+// Admin token enforcement — fail-closed. Must set AGECOIN_ADMIN_TOKEN in the environment.
 $adminToken = getenv('AGECOIN_ADMIN_TOKEN') ?: '';
-if ($adminToken) {
-    $provided = $_SERVER['HTTP_X_ADMIN_TOKEN'] ?? '';
-    if (!hash_equals($adminToken, $provided)) {
-        http_response_code(401);
-        echo json_encode(['success' => false, 'message' => 'unauthorized']);
-        $MySQLi->close();
-        die;
-    }
+if (empty($adminToken)) {
+    error_log('Admin API rejected request: AGECOIN_ADMIN_TOKEN not configured');
+    http_response_code(503);
+    echo json_encode(['success' => false, 'message' => 'admin token not configured']);
+    $MySQLi->close();
+    die;
+}
+$provided = $_SERVER['HTTP_X_ADMIN_TOKEN'] ?? '';
+if (!hash_equals($adminToken, $provided)) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'message' => 'unauthorized']);
+    $MySQLi->close();
+    die;
 }
 
 $allowed = ['banUser','unbanUser','changeUserScore','sendMessageToUser'];

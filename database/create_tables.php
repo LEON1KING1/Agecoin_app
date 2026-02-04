@@ -41,6 +41,26 @@ joinDate BIGINT DEFAULT NULL
 if($MySQLi->query($query) === false)
 echo $MySQLi->error.'<br>';
 
+// add recommended indexes (idempotent)
+$indexes = [
+    'idx_users_joinDate' => "ALTER TABLE users ADD INDEX idx_users_joinDate (joinDate)",
+    'idx_users_dailyRewardDate' => "ALTER TABLE users ADD INDEX idx_users_dailyRewardDate (dailyRewardDate)",
+    'idx_users_inviterID' => "ALTER TABLE users ADD INDEX idx_users_inviterID (inviterID)",
+    'idx_users_isPremium' => "ALTER TABLE users ADD INDEX idx_users_isPremium (isPremium)",
+    'idx_users_score' => "ALTER TABLE users ADD INDEX idx_users_score (score)",
+    'idx_users_hash' => "ALTER TABLE users ADD INDEX idx_users_hash (hash(64))",
+    // additional indexes to improve lookup & search
+    'idx_users_username' => "ALTER TABLE users ADD INDEX idx_users_username (username(64))",
+    'idx_users_wallet' => "ALTER TABLE users ADD INDEX idx_users_wallet (wallet(64))",
+];
+foreach ($indexes as $name => $sql) {
+    // create index only if it doesn't already exist
+    $res = $MySQLi->query("SHOW INDEX FROM users WHERE Key_name = '" . $MySQLi->real_escape_string(substr($name, 4)) . "'");
+    if (!$res || $res->num_rows === 0) {
+        $MySQLi->query($sql);
+    }
+}
+
 
 //          user_tasks            //
 $query = "CREATE TABLE user_tasks (
