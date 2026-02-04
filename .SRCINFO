@@ -1,0 +1,13 @@
+# This .SRCINFO was created to match the PKGBUILD in this repo. Verify before submitting to AUR.
+pkgname : aur-game
+pkgver : 0.1.0
+pkgrel : 1
+pkgdesc : Agecoin TG-game — Telegram webapp backend
+arch   : any
+url    : https://github.com/LEON1KING1/Agecoin_app
+license: custom
+depends: php
+depends: php-mysqli
+depends: php-curl
+source : https://github.com/LEON1KING1/Agecoin_app/archive/refs/tags/v0.1.0.tar.gz
+sha256sums: SKIP
