@@ -12,15 +12,26 @@ $MySQLi->close();
 die;
 }
 
-$q = $_REQUEST['q'];
+$q = isset($_REQUEST['q']) ? (int)$_REQUEST['q'] : 0;
 
-$get_user = mysqli_fetch_assoc(mysqli_query($MySQLi, "SELECT * FROM `users` WHERE `id` = '{$q}' LIMIT 1"));
+// safe lookup
+$stmt = $MySQLi->prepare('SELECT * FROM `users` WHERE `id` = ? LIMIT 1');
+$stmt->bind_param('i', $q);
+$stmt->execute();
+$get_user = $stmt->get_result()->fetch_assoc();
+$stmt->close();
 
-$Name = $get_user['firstName'] . ' ' . $get_user['lastName'];
+if (!$get_user) {
+    echo '<div class="container mx-auto p-8">\n<p class="text-center text-red-600">User not found.</p></div>';
+    $MySQLi->close();
+    exit;
+}
+
+$Name = ($get_user['firstName'] ?? '') . ' ' . ($get_user['lastName'] ?? '');
 $UserID = $get_user['id'];
 $Username = $get_user['username']?:'-';
 $isBanned = 'No';
-if ($get_user['step'] == 'banned') $isBanned = 'Yes';
+if (($get_user['step'] ?? '') == 'banned') $isBanned = 'Yes';
 $isPremium = 'No';
 if ($get_user['isPremium'] == 1) $isPremium = 'Yes';
 $Score = number_format($get_user['score']);

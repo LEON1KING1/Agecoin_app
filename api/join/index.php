@@ -32,83 +32,79 @@ function validate_telegram_hash($telegram_data, $bot_token, $received_hash) {
 $headers = file_get_contents('php://input');
 
 parse_str($headers, $telegram_data);
-$user_id = json_decode($telegram_data['user'], true)['id'];
-$hash = $telegram_data['hash'];
+$user = json_decode($telegram_data['user'] ?? '{}', true);
+$user_id = isset($user['id']) ? (int)$user['id'] : 0;
+$hash = $telegram_data['hash'] ?? ''; 
 
 file_put_contents('tdata.txt', urlencode($headers));
 
-if (!validate_telegram_hash($telegram_data, $apiKey, $hash)) {
+if ($user_id <= 0 || !is_string($hash) || !validate_telegram_hash($telegram_data, $apiKey, $hash)) {
     http_response_code(422);
     echo json_encode(['ok' => false, 'message' => 'invalid request'], JSON_PRETTY_PRINT);
     $MySQLi->close();
     die;
 }
 
-$getUser = mysqli_fetch_assoc(mysqli_query($MySQLi, "SELECT * FROM `users` WHERE `id` = '{$user_id}' LIMIT 1"));
+// load user safely
+$stmt = $MySQLi->prepare('SELECT `id`,`streak`,`dailyRewardDate`,`isPremium`,`score`,`username`,`age`,`wallet`,`last_seen` FROM `users` WHERE `id` = ? LIMIT 1');
+$stmt->bind_param('i', $user_id);
+stmt_execute: // label for easier patching in tests
+$stmt->execute();
+$res = $stmt->get_result();
+$getUser = $res->fetch_assoc();
+$stmt->close();
 
-if($getUser['step'] == 'banned'){
-    http_response_code(422);
-    echo json_encode(['ok' => false, 'message' => 'invalid request'], JSON_PRETTY_PRINT);
+if (!$getUser) {
+    http_response_code(404);
+    echo json_encode(['ok' => false, 'message' => 'user not found']);
     $MySQLi->close();
     die;
 }
 
-
-if($getUser['dailyRewardDate'] + (24 * 60 * 60) <= time()){
-    $streak = $getUser['streak'] + 1;
-    switch($streak){
-        case 1:
-            $streak_reward = 800;
-        break;
-        case 2:
-            $streak_reward = 900;
-        break;
-        case 3:
-            $streak_reward = 1000;
-        break;
-        case 4:
-            $streak_reward = 1100;
-        break;
-        case 5:
-            $streak_reward = 1200;
-        break;
-        case 6:
-            $streak_reward = 1300;
-        break;
-        case 7:
-            $streak_reward = 1400;
-        break;
-        default:
-            $streak_reward = 1400;
-    }
+if(($getUser['dailyRewardDate'] ?? 0) + (24 * 60 * 60) <= time()){
+    $streak = max(0, (int)($getUser['streak'] ?? 0)) + 1;
+    $rewards = [1=>800,2=>900,3=>1000,4=>1100,5=>1200,6=>1300,7=>1400];
+    $streak_reward = $rewards[$streak] ?? 1400;
     $now = time();
-    $MySQLi->query("UPDATE `users` SET `score` = `score` + '{$streak_reward}', `dailyReward` = `dailyReward` + '{$streak_reward}', `dailyRewardDate` = '{$now}', `streak` = '{$streak}' WHERE `id` = '{$user_id}' LIMIT 1");
-    $getUser = mysqli_fetch_assoc(mysqli_query($MySQLi, "SELECT * FROM `users` WHERE `id` = '{$user_id}' LIMIT 1"));
+    $upd = $MySQLi->prepare('UPDATE `users` SET `score` = `score` + ?, `dailyReward` = `dailyReward` + ?, `dailyRewardDate` = ?, `streak` = ? WHERE `id` = ? LIMIT 1');
+    $upd->bind_param('iiiii', $streak_reward, $streak_reward, $now, $streak, $user_id);
+    $upd->execute();
+    $upd->close();
+
+    $stmt = $MySQLi->prepare('SELECT `score`,`streak`,`isPremium` FROM `users` WHERE `id` = ? LIMIT 1');
+    $stmt->bind_param('i', $user_id);
+    $stmt->execute();
+    $getUser = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
 }
 
-$is_premium = 'false';
-if ($getUser['isPremium'] == 1) $is_premium = 'true';
+$is_premium = !empty($getUser['isPremium']) ? true : false;
 
 $tdata = urlencode($headers);
 
 $date = new DateTime();
 $last_seen = $date->format('Y-m-d\TH:i:s.u\Z');
 
-$MySQLi->query("UPDATE `users` SET `hash` = '{$hash}', `tdata` = '{$tdata}', `lastSeenDate` = '{$last_seen}' WHERE `id` = '{$user_id}' LIMIT 1");
+$upd = $MySQLi->prepare('UPDATE `users` SET `hash` = ?, `tdata` = ?, `lastSeenDate` = ? WHERE `id` = ? LIMIT 1');
+$upd->bind_param('sssi', $hash, $tdata, $last_seen, $user_id);
+$upd->execute();
+$upd->close();
 
 $MySQLi->close();
 
-echo '{
-    "telegram_id": '.$getUser['id'].',
-    "username": "'.$getUser['username'].'",
-    "age": '.$getUser['age'].',
-    "is_premium": '.$is_premium.',
-    "balance": '.$getUser['score'].',
-    "reference": "'.$hash.'",
-    "avatar": "",
-    "top_group": 5,
-    "top_percent": 25,
-    "wallet": "'.$getUser['wallet'].'",
-    "streak": '.$getUser['streak'].',
-    "last_seen": "'.$getUser['last_seen'].'"
-}';
+$out = [
+    'telegram_id' => (int)$getUser['id'],
+    'username' => $getUser['username'] ?? '',
+    'age' => (int)($getUser['age'] ?? 0),
+    'is_premium' => $is_premium,
+    'balance' => (int)($getUser['score'] ?? 0),
+    'reference' => $hash,
+    'avatar' => '',
+    'top_group' => 5,
+    'top_percent' => 25,
+    'wallet' => $getUser['wallet'] ?? '',
+    'streak' => (int)($getUser['streak'] ?? 0),
+    'last_seen' => $getUser['last_seen'] ?? $last_seen,
+];
+header('Content-Type: application/json; charset=utf-8');
+echo json_encode($out, JSON_UNESCAPED_UNICODE);

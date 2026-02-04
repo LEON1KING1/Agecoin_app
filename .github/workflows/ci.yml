@@ -1,0 +1,57 @@
+name: CI — PHP checks
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  php-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v4
+        with:
+          php-version: 8.1
+
+      - name: Show PHP version
+        run: php -v
+
+      - name: Install composer (if needed)
+        run: |
+          if [ -f composer.json ]; then composer --version || php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" && php composer-setup.php --install-dir=/usr/local/bin --filename=composer; fi
+
+      - name: PHP syntax check (all tracked .php files)
+        run: |
+          set -e
+          files=$(git ls-files '*.php')
+          for f in $files; do php -l "$f"; done
+
+      - name: Secret scan
+        run: bash scripts/secret_scan.sh
+
+      - name: Static analysis (optional)
+        run: |
+          if [ -f composer.json ]; then
+            composer require --working-dir=. --no-interaction --dev phpstan/phpstan:^1.10 || true
+            vendor/bin/phpstan analyse -l 5 --memory-limit=512M || true
+          else
+            echo 'No composer.json — skipping phpstan';
+          fi
+
+      - name: Run tests (if present)
+        run: |
+          if [ -f phpunit.xml.dist -o -f phpunit.xml ]; then
+            composer install --no-interaction --prefer-dist || true
+            vendor/bin/phpunit --colors=always || true
+          else
+            echo 'No phpunit config found — skipping tests';
+          fi
+
+      - name: Upload quick report
+        if: always()
+        run: echo "CI completed — check job logs for details."

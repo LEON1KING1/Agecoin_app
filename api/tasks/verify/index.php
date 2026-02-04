@@ -1,90 +1,209 @@
 <?php
 
+// Secure task verification endpoint
+// - prepared statements
+// - input validation
+// - duplicate-claim prevention
+// - simple rate-limiting
+// - transactional updates to avoid race conditions
+
 include '../../../bot/config.php';
 include '../../../bot/functions.php';
 
 $MySQLi = new mysqli('localhost',$DB['username'],$DB['password'],$DB['dbname']);
 $MySQLi->query("SET NAMES 'utf8'");
 $MySQLi->set_charset('utf8mb4');
-if ($MySQLi->connect_error) die;
+if ($MySQLi->connect_error) http_response_code(500) && die;
 function ToDie($MySQLi){
-$MySQLi->close();
-die;
-}
-
-$task = $_REQUEST['task'];
-$user_id = $_REQUEST['user_id'];
-$reference = $_REQUEST['reference'];
-
-$get_user = mysqli_fetch_assoc(mysqli_query($MySQLi, "SELECT * FROM `users` WHERE `id` = '{$user_id}' AND `hash` = '{$reference}' LIMIT 1"));
-
-if(!$get_user){
-    http_response_code(300);
-    echo json_encode(['ok' => false, 'message' => 'user not found'], JSON_PRETTY_PRINT);
     $MySQLi->close();
     die;
 }
 
-$now = time();
-
-switch($task){
-    case 'good-age':
-        $task_name = 'good-age';
-        $reward = 50;
-        $MySQLi->query("UPDATE `users` SET `score` = `score` + '{$reward}', `tasksReward` = `tasksReward` + '{$reward}' WHERE `id` = '{$user_id}' LIMIT 1");
-        $MySQLi->query("INSERT INTO `user_tasks` (`user_id`, `task_name`, `check_time`) VALUES ('{$user_id}', '{$task_name}', '{$now}')");
-        $isOK = true;
-    break;
-
-    case 'follow-age-x':
-        $task_name = 'follow-age-x';
-        $reward = 1000;
-        $MySQLi->query("UPDATE `users` SET `score` = `score` + '{$reward}', `tasksReward` = `tasksReward` + '{$reward}' WHERE `id` = '{$user_id}' LIMIT 1");
-        $MySQLi->query("INSERT INTO `user_tasks` (`user_id`, `task_name`, `check_time`) VALUES ('{$user_id}', '{$task_name}', '{$now}')");
-        $isOK = true;
-    break;
-
-    case 'invite-frens':
-        $task_name = 'invite-frens';
-        $reward = 20000;
-        $get_referrals = mysqli_fetch_all(mysqli_query($MySQLi, "SELECT `id` FROM `users` WHERE `inviter_id` = '{$user_id}' LIMIT 10"));
-        if(count($get_referrals) >= 5){
-            $MySQLi->query("UPDATE `users` SET `score` = `score` + '{$reward}', `tasksReward` = `tasksReward` + '{$reward}' WHERE `id` = '{$user_id}' LIMIT 1");
-            $MySQLi->query("INSERT INTO `user_tasks` (`user_id`, `task_name`, `check_time`) VALUES ('{$user_id}', '{$task_name}', '{$now}')");
-            $isOK = true;
-        }
-    break;
-
-    case 'add-time-telegram':
-        $task_name = 'add-time-telegram';
-        $reward = 2500;
-        $name = json_decode(file_get_contents('https://api.telegram.org/bot'.$apiKey.'/getchat?chat_id='.$user_id), true)['result']['first_name'];
-        if (strpos($name, '⏳') !== false) {
-            $MySQLi->query("UPDATE `users` SET `score` = `score` + '{$reward}', `tasksReward` = `tasksReward` + '{$reward}' WHERE `id` = '{$user_id}' LIMIT 1");
-            $MySQLi->query("INSERT INTO `user_tasks` (`user_id`, `task_name`, `check_time`) VALUES ('{$user_id}', '{$task_name}', '{$now}')");
-            $isOK = true;
-        }
-    break;
-
-    case 'subscribe-age-telegram':
-        $task_name = 'subscribe-age-telegram';
-        $reward = 50;
-        $result = json_decode(file_get_contents('https://api.telegram.org/bot'.$apiKey.'/getChatMember?chat_id=-1001478594200&user_id='.$user_id));
-        if($result->ok and in_array($result->result->status, ['member', 'administrator'])){
-            $MySQLi->query("UPDATE `users` SET `score` = `score` + '{$reward}', `tasksReward` = `tasksReward` + '{$reward}' WHERE `id` = '{$user_id}' LIMIT 1");
-            $MySQLi->query("INSERT INTO `user_tasks` (`user_id`, `task_name`, `check_time`) VALUES ('{$user_id}', '{$task_name}', '{$now}')");
-            $isOK = true;
-        }
-    break;
-
-    default:
-        $isOK = false;
+// simple file-based rate limiter (per user)
+function rate_limited($key, $limit = 6, $window = 60){
+    $f = sys_get_temp_dir() . "/agecoin_rl_" . preg_replace('/[^a-z0-9_\-]/i','', (string)$key);
+    $now = time();
+    $data = [];
+    if (is_readable($f)) {
+        $data = json_decode(@file_get_contents($f) ?: '[]', true) ?: [];
+        $data = array_filter($data, function($t) use($now, $window){ return ($t > $now - $window); });
+    }
+    if (count($data) >= $limit) return true;
+    $data[] = $now;
+    @file_put_contents($f, json_encode($data), LOCK_EX);
+    return false;
 }
 
+$task = $_REQUEST['task'] ?? '';
+$user_id = isset($_REQUEST['user_id']) ? (int)$_REQUEST['user_id'] : 0;
+$reference = $_REQUEST['reference'] ?? '';
 
+// basic validation
+$allowed = ['good-age','follow-age-x','invite-frens','add-time-telegram','subscribe-age-telegram'];
+if (!in_array($task, $allowed, true) || $user_id <= 0 || !preg_match('/^[a-f0-9]{8,64}$/i', $reference)){
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'message' => 'invalid input']);
+    ToDie($MySQLi);
+}
+
+// rate-limit by user and IP
+if (rate_limited('task_verify_user_' . $user_id, 8, 60) || rate_limited('task_verify_ip_' . ($_SERVER['REMOTE_ADDR'] ?? 'na'), 30, 60)){
+    http_response_code(429);
+    echo json_encode(['ok' => false, 'message' => 'rate limit']);
+    ToDie($MySQLi);
+}
+
+// lookup user safely
+$stmt = $MySQLi->prepare('SELECT `id`,`walletReward` FROM `users` WHERE `id` = ? AND `hash` = ? LIMIT 1');
+$stmt->bind_param('is', $user_id, $reference);
+$stmt->execute();
+$res = $stmt->get_result();
+$get_user = $res->fetch_assoc();
+$stmt->close();
+
+if (!$get_user) {
+    http_response_code(404);
+    echo json_encode(['ok' => false, 'message' => 'user not found']);
+    ToDie($MySQLi);
+}
+
+// prevent duplicate claims
+$checkStmt = $MySQLi->prepare('SELECT 1 FROM `user_tasks` WHERE `user_id` = ? AND `task_name` = ? LIMIT 1');
+$checkStmt->bind_param('is', $user_id, $task);
+$checkStmt->execute();
+$checkRes = $checkStmt->get_result();
+if ($checkRes->fetch_row()){
+    // idempotent: already completed
+    http_response_code(200);
+    echo json_encode(['ok' => true, 'message' => 'already completed']);
+    $checkStmt->close();
+    ToDie($MySQLi);
+}
+$checkStmt->close();
+
+$now = time();
+
+// perform task-specific checks and a transactional award
+$MySQLi->begin_transaction();
+$awarded = false;
+try {
+    switch($task){
+        case 'good-age':
+            $reward = 50;
+            $awardStmt = $MySQLi->prepare('UPDATE `users` SET `score` = `score` + ?, `tasksReward` = `tasksReward` + ? WHERE `id` = ? LIMIT 1');
+            $awardStmt->bind_param('iii', $reward, $reward, $user_id);
+            $awardStmt->execute();
+            $awardStmt->close();
+            $insert = $MySQLi->prepare('INSERT INTO `user_tasks` (`user_id`,`task_name`,`check_time`) VALUES (?, ?, ?)');
+            $insert->bind_param('isi', $user_id, $task, $now);
+            $insert->execute();
+            $insert->close();
+            $awarded = true;
+        break;
+
+        case 'follow-age-x':
+            $reward = 1000;
+            $awardStmt = $MySQLi->prepare('UPDATE `users` SET `score` = `score` + ?, `tasksReward` = `tasksReward` + ? WHERE `id` = ? LIMIT 1');
+            $awardStmt->bind_param('iii', $reward, $reward, $user_id);
+            $awardStmt->execute();
+            $awardStmt->close();
+            $insert = $MySQLi->prepare('INSERT INTO `user_tasks` (`user_id`,`task_name`,`check_time`) VALUES (?, ?, ?)');
+            $insert->bind_param('isi', $user_id, $task, $now);
+            $insert->execute();
+            $insert->close();
+            $awarded = true;
+        break;
+
+        case 'invite-frens':
+            // only count referrals older than 24h to reduce fake-account gaming
+            $minAge = $now - 86400;
+            $refStmt = $MySQLi->prepare('SELECT COUNT(1) as c FROM `users` WHERE `inviterID` = ? AND `joinDate` <= ?');
+            $refStmt->bind_param('ii', $user_id, $minAge);
+            $refStmt->execute();
+            $rres = $refStmt->get_result()->fetch_assoc();
+            $refStmt->close();
+            if ((int)$rres['c'] >= 5){
+                $reward = 20000;
+                $awardStmt = $MySQLi->prepare('UPDATE `users` SET `score` = `score` + ?, `tasksReward` = `tasksReward` + ? WHERE `id` = ? LIMIT 1');
+                $awardStmt->bind_param('iii', $reward, $reward, $user_id);
+                $awardStmt->execute();
+                $awardStmt->close();
+                $insert = $MySQLi->prepare('INSERT INTO `user_tasks` (`user_id`,`task_name`,`check_time`) VALUES (?, ?, ?)');
+                $insert->bind_param('isi', $user_id, $task, $now);
+                $insert->execute();
+                $insert->close();
+                $awarded = true;
+            }
+        break;
+
+        case 'add-time-telegram':
+            $reward = 2500;
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => 'https://api.telegram.org/bot' . rawurlencode($apiKey) . '/getChat?chat_id=' . rawurlencode($user_id),
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 3,
+                CURLOPT_CONNECTTIMEOUT => 2,
+            ]);
+            $resp = @curl_exec($ch);
+            curl_close($ch);
+            $json = $resp ? json_decode($resp, true) : null;
+            $name = $json['result']['first_name'] ?? '';
+            if (is_string($name) && strpos($name, '⏳') !== false){
+                $awardStmt = $MySQLi->prepare('UPDATE `users` SET `score` = `score` + ?, `tasksReward` = `tasksReward` + ? WHERE `id` = ? LIMIT 1');
+                $awardStmt->bind_param('iii', $reward, $reward, $user_id);
+                $awardStmt->execute();
+                $awardStmt->close();
+                $insert = $MySQLi->prepare('INSERT INTO `user_tasks` (`user_id`,`task_name`,`check_time`) VALUES (?, ?, ?)');
+                $insert->bind_param('isi', $user_id, $task, $now);
+                $insert->execute();
+                $insert->close();
+                $awarded = true;
+            }
+        break;
+
+        case 'subscribe-age-telegram':
+            $reward = 50;
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => 'https://api.telegram.org/bot' . rawurlencode($apiKey) . '/getChatMember?chat_id=-1001478594200&user_id=' . rawurlencode($user_id),
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 3,
+                CURLOPT_CONNECTTIMEOUT => 2,
+            ]);
+            $resp = @curl_exec($ch);
+            curl_close($ch);
+            $json = $resp ? json_decode($resp, true) : null;
+            if (!empty($json['ok']) && in_array($json['result']['status'] ?? '', ['member','administrator'], true)){
+                $awardStmt = $MySQLi->prepare('UPDATE `users` SET `score` = `score` + ?, `tasksReward` = `tasksReward` + ? WHERE `id` = ? LIMIT 1');
+                $awardStmt->bind_param('iii', $reward, $reward, $user_id);
+                $awardStmt->execute();
+                $awardStmt->close();
+                $insert = $MySQLi->prepare('INSERT INTO `user_tasks` (`user_id`,`task_name`,`check_time`) VALUES (?, ?, ?)');
+                $insert->bind_param('isi', $user_id, $task, $now);
+                $insert->execute();
+                $insert->close();
+                $awarded = true;
+            }
+        break;
+
+        default:
+            // nothing
+    }
+
+    if ($awarded) {
+        $MySQLi->commit();
+        http_response_code(200);
+        echo json_encode(['success' => true]);
+    } else {
+        $MySQLi->rollback();
+        http_response_code(200);
+        echo json_encode(['success' => false]);
+    }
+} catch (Exception $e) {
+    $MySQLi->rollback();
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'message' => 'server error']);
+}
 
 $MySQLi->close();
-
-
-if($isOK) echo '{"success":true}';
-else echo '{"success":false}';

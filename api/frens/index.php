@@ -13,21 +13,37 @@ die;
 }
 
 
-$user_id = $_REQUEST['user_id'];
-$reference = $_REQUEST['reference'];
-$get_user = mysqli_fetch_assoc(mysqli_query($MySQLi, "SELECT * FROM `users` WHERE `id` = '{$user_id}' AND `hash` = '{$reference}' LIMIT 1"));
+$user_id = isset($_REQUEST['user_id']) ? (int)$_REQUEST['user_id'] : 0;
+$reference = $_REQUEST['reference'] ?? '';
+if ($user_id <= 0 || !preg_match('/^[a-f0-9]{8,64}$/i', $reference)){
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'message' => 'invalid input']);
+    $MySQLi->close();
+    die;
+}
+
+$stmt = $MySQLi->prepare('SELECT `id` FROM `users` WHERE `id` = ? AND `hash` = ? LIMIT 1');
+$stmt->bind_param('is', $user_id, $reference);
+$stmt->execute();
+$res = $stmt->get_result();
+$get_user = $res->fetch_assoc();
+$stmt->close();
 
 if(!$get_user){
-    http_response_code(300);
+    http_response_code(404);
     echo json_encode(['ok' => false, 'message' => 'user not found'], JSON_PRETTY_PRINT);
     $MySQLi->close();
     die;
 }
 
-$get_referrals = mysqli_fetch_all(mysqli_query($MySQLi, "SELECT `id`, `username`, `age`, `isPremium` FROM `users` WHERE `inviterID` = '{$get_user['id']}'"), MYSQLI_ASSOC);
+$stmt = $MySQLi->prepare('SELECT `id`, `username`, `age`, `isPremium` FROM `users` WHERE `inviterID` = ? LIMIT 500');
+$stmt->bind_param('i', $get_user['id']);
+$stmt->execute();
+$get_referrals = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$stmt->close();
 
 if(!$get_referrals){
-    echo '{"frens":[],"count":0}';
+    echo json_encode(['frens' => [], 'count' => 0]);
     $MySQLi->close();
     die;
 }

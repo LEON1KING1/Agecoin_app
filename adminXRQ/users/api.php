@@ -12,9 +12,26 @@ $MySQLi->close();
 die;
 }
 
-$q = $_REQUEST['q'];
+$q = $_REQUEST['q'] ?? '';
+// limit input length
+$q = mb_substr((string)$q, 0, 64);
 
-$get_all = mysqli_fetch_all(mysqli_query($MySQLi, "SELECT * FROM `users` WHERE `id` = '{$q}' LIMIT 30"), MYSQLI_ASSOC);
-if(!$get_all) $get_all = mysqli_fetch_all(mysqli_query($MySQLi, "SELECT * FROM `users` WHERE `firstName` LIKE '%{$q}%' OR `lastName` LIKE '%{$q}%' OR `username` LIKE '%{$q}%' LIMIT 30"), MYSQLI_ASSOC);
+// if numeric -> lookup by id, otherwise perform a safe LIKE search
+if (ctype_digit($q)) {
+    $id = (int)$q;
+    $stmt = $MySQLi->prepare('SELECT * FROM `users` WHERE `id` = ? LIMIT 30');
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    $get_all = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+} else {
+    $like = '%' . $q . '%';
+    $stmt = $MySQLi->prepare('SELECT * FROM `users` WHERE `firstName` LIKE ? OR `lastName` LIKE ? OR `username` LIKE ? LIMIT 30');
+    $stmt->bind_param('sss', $like, $like, $like);
+    $stmt->execute();
+    $get_all = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+}
 $MySQLi->close();
-echo json_encode($get_all);
+header('Content-Type: application/json; charset=utf-8');
+echo json_encode($get_all, JSON_UNESCAPED_UNICODE);
