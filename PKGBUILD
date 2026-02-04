@@ -10,7 +10,7 @@ url="https://github.com/LEON1KING1/Agecoin_app"
 license=(custom)
 dependencies=(php php-mysqli php-curl)
 source=("${url}/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('180269951e8a26731893b1dabb790b0c5a681171305b28476403ac2e0313d34d')
 
 prepare() {
   cd "$srcdir"

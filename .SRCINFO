@@ -10,4 +10,4 @@ depends: php
 depends: php-mysqli
 depends: php-curl
 source : https://github.com/LEON1KING1/Agecoin_app/archive/refs/tags/v0.1.0.tar.gz
-sha256sums: SKIP
+sha256sums: 180269951e8a26731893b1dabb790b0c5a681171305b28476403ac2e0313d34d
