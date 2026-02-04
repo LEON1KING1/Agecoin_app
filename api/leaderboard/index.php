@@ -6,25 +6,71 @@ include '../../bot/functions.php';
 $MySQLi = new mysqli('localhost',$DB['username'],$DB['password'],$DB['dbname']);
 $MySQLi->query("SET NAMES 'utf8'");
 $MySQLi->set_charset('utf8mb4');
-if ($MySQLi->connect_error) die;
+if ($MySQLi->connect_error) {
+    error_log('MySQL connection error (api/leaderboard): ' . $MySQLi->connect_error);
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'database connection failed']);
+    exit;
+}
 function ToDie($MySQLi){
-$MySQLi->close();
-die;
+    error_log('MySQL error (api/leaderboard): ' . $MySQLi->error);
+    $MySQLi->close();
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'internal server error']);
+    exit;
+} 
+
+
+$user_id = isset($_REQUEST['user_id']) ? (int)$_REQUEST['user_id'] : 0;
+if ($user_id <= 0) {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'message' => 'invalid input'], JSON_PRETTY_PRINT);
+    $MySQLi->close();
+    die;
 }
 
-
-$user_id = $_REQUEST['user_id'];
-$get_user = mysqli_fetch_assoc(mysqli_query($MySQLi, "SELECT * FROM `users` WHERE `id` = '{$user_id}' LIMIT 1"));
+$stmt = $MySQLi->prepare('SELECT `id`,`score` FROM `users` WHERE `id` = ? LIMIT 1');
+$stmt->bind_param('i', $user_id);
+$stmt->execute();
+$get_user = $stmt->get_result()->fetch_assoc();
+$stmt->close();
 
 if(!$get_user){
-    http_response_code(300);
+    http_response_code(404);
     echo json_encode(['ok' => false, 'message' => 'user not found'], JSON_PRETTY_PRINT);
     $MySQLi->close();
     die;
 }
 
-$users_list = mysqli_fetch_all(mysqli_query($MySQLi, "SELECT `id`, `username`, `score` FROM users ORDER BY score DESC LIMIT 200"), MYSQLI_ASSOC);
-$user_rank = mysqli_fetch_assoc(mysqli_query($MySQLi, "SELECT ID, score, (SELECT COUNT(*) + 1 FROM users AS u2 WHERE u2.score > u1.score) AS user_rank FROM users AS u1 WHERE ID = '{$user_id}'"))['user_rank'] - 1;
+// try file-cache first (short TTL)
+$cacheKey = 'leaderboard_v1';
+$cached = null;
+if (function_exists('agecoin_cache_get')) {
+    $cached = agecoin_cache_get($cacheKey);
+}
+if ($cached && is_array($cached)) {
+    $users_list = $cached['users_list'];
+    $cached_counts = $cached['counts'];
+} else {
+    $q = $MySQLi->prepare('SELECT `id`, `username`, `score` FROM users ORDER BY score DESC LIMIT 200');
+    $q->execute();
+    $users_list = $q->get_result()->fetch_all(MYSQLI_ASSOC);
+    $q->close();
+    if (function_exists('agecoin_cache_set')) {
+        agecoin_cache_set($cacheKey, ['users_list' => $users_list, 'counts' => count($users_list)], 25);
+    }
+}
+
+// advise proxies & clients to cache this short-lived response
+header('Cache-Control: public, max-age=20, s-maxage=60');
+
+// compute rank efficiently using user's score (avoid correlated subquery)
+$scoreForRank = (int)($get_user['score'] ?? 0);
+$stmt = $MySQLi->prepare('SELECT COUNT(1) AS higher FROM users WHERE score > ?');
+$stmt->bind_param('i', $scoreForRank);
+$stmt->execute();
+$user_rank = (int)($stmt->get_result()->fetch_assoc()['higher'] ?? 0) + 1;
+$stmt->close(); 
 
 
 $list = array();

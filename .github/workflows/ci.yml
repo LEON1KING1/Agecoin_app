@@ -1,0 +1,46 @@
+name: CI — PHP checks
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  php-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v4
+        with:
+          php-version: 8.1
+
+      - name: Show PHP version
+        run: php -v
+
+      - name: Install composer (if needed)
+        run: |
+          if [ -f composer.json ]; then composer --version || php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" && php composer-setup.php --install-dir=/usr/local/bin --filename=composer; fi
+
+      - name: Run repository checks (lint + security + tests)
+        run: |
+          set -euo pipefail
+          chmod +x scripts/security-scan.sh scripts/run-tests.sh || true
+          # run quick lint + security + tests wrapper
+          ./scripts/run-tests.sh
+
+      - name: Optional secret scan (best-effort)
+        if: always()
+        run: |
+          if [ -f scripts/secret_scan.sh ]; then
+            bash scripts/secret_scan.sh || true
+          else
+            echo 'no secret_scan.sh present; skipping' ;
+          fi
+
+      - name: Upload quick report
+        if: always()
+        run: echo "CI completed — check job logs for details."

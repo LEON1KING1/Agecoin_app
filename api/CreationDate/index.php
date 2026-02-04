@@ -43,5 +43,17 @@ function getAge($id) {
     ];
 }
 
-$id = $_REQUEST['user_id'];
-echo date('Y') - explode('/', getAge($id)[0])[1];
+$id = isset($_REQUEST['user_id']) ? (int)$_REQUEST['user_id'] : 0;
+if ($id <= 0) {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'message' => 'invalid input']);
+    die;
+}
+$g = getAge($id);
+$yearPart = isset($g[0]) ? explode('/', $g[0])[1] ?? null : null;
+if (!$yearPart || !is_numeric($yearPart)) {
+    http_response_code(422);
+    echo json_encode(['ok' => false, 'message' => 'cannot calculate age']);
+    die;
+}
+echo (int)date('Y') - (int)$yearPart; 

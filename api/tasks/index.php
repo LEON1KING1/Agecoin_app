@@ -1,31 +1,44 @@
 <?php
 
+// safer tasks list endpoint — validates input and uses prepared statements
 include '../../bot/config.php';
 include '../../bot/functions.php';
 
 $MySQLi = new mysqli('localhost',$DB['username'],$DB['password'],$DB['dbname']);
 $MySQLi->query("SET NAMES 'utf8'");
 $MySQLi->set_charset('utf8mb4');
-if ($MySQLi->connect_error) die;
-function ToDie($MySQLi){
-$MySQLi->close();
-die;
+if ($MySQLi->connect_error) http_response_code(500) && die;
+
+$user_id = isset($_REQUEST['user_id']) ? (int)$_REQUEST['user_id'] : 0;
+$reference = $_REQUEST['reference'] ?? '';
+if ($user_id <= 0 || !preg_match('/^[a-f0-9]{8,64}$/i', $reference)){
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'message' => 'invalid input']);
+    $MySQLi->close();
+    die;
 }
 
+// lookup user safely
+$stmt = $MySQLi->prepare('SELECT `id` FROM `users` WHERE `id` = ? AND `hash` = ? LIMIT 1');
+$stmt->bind_param('is', $user_id, $reference);
+$stmt->execute();
+$res = $stmt->get_result();
+$get_user = $res->fetch_assoc();
+$stmt->close();
 
-$user_id = $_REQUEST['user_id'];
-$reference = $_REQUEST['reference'];
-$get_user = mysqli_fetch_assoc(mysqli_query($MySQLi, "SELECT * FROM `users` WHERE `id` = '{$user_id}' AND `hash` = '{$reference}' LIMIT 1"));
-
-if(!$get_user){
-    http_response_code(300);
+if (!$get_user){
+    http_response_code(404);
     echo json_encode(['ok' => false, 'message' => 'user not found'], JSON_PRETTY_PRINT);
     $MySQLi->close();
     die;
 }
 
-
-$get_user_tasks = mysqli_fetch_all(mysqli_query($MySQLi, "SELECT `task_name` FROM `user_tasks` WHERE `user_id` = '{$user_id}'"), MYSQLI_ASSOC);
+$stmt = $MySQLi->prepare('SELECT `task_name` FROM `user_tasks` WHERE `user_id` = ?');
+$stmt->bind_param('i', $user_id);
+$stmt->execute();
+$res = $stmt->get_result();
+$get_user_tasks = $res->fetch_all(MYSQLI_ASSOC);
+$stmt->close();
 $task_names = array_column($get_user_tasks, 'task_name');
 
 

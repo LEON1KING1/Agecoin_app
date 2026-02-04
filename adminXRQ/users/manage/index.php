@@ -6,21 +6,40 @@ include '../../../bot/functions.php';
 $MySQLi = new mysqli('localhost',$DB['username'],$DB['password'],$DB['dbname']);
 $MySQLi->query("SET NAMES 'utf8'");
 $MySQLi->set_charset('utf8mb4');
-if ($MySQLi->connect_error) die;
+if ($MySQLi->connect_error) {
+    error_log('MySQL connection error (admin users manage): ' . $MySQLi->connect_error);
+    http_response_code(500);
+    echo '<p class="text-center text-red-600">Database connection error.</p>';
+    exit;
+}
 function ToDie($MySQLi){
-$MySQLi->close();
-die;
+    error_log('MySQL error (admin users manage): ' . $MySQLi->error);
+    $MySQLi->close();
+    http_response_code(500);
+    echo '<p class="text-center text-red-600">Internal server error.</p>';
+    exit;
+} 
+
+$q = isset($_REQUEST['q']) ? (int)$_REQUEST['q'] : 0;
+
+// safe lookup
+$stmt = $MySQLi->prepare('SELECT * FROM `users` WHERE `id` = ? LIMIT 1');
+$stmt->bind_param('i', $q);
+$stmt->execute();
+$get_user = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+
+if (!$get_user) {
+    echo '<div class="container mx-auto p-8">\n<p class="text-center text-red-600">User not found.</p></div>';
+    $MySQLi->close();
+    exit;
 }
 
-$q = $_REQUEST['q'];
-
-$get_user = mysqli_fetch_assoc(mysqli_query($MySQLi, "SELECT * FROM `users` WHERE `id` = '{$q}' LIMIT 1"));
-
-$Name = $get_user['firstName'] . ' ' . $get_user['lastName'];
+$Name = ($get_user['firstName'] ?? '') . ' ' . ($get_user['lastName'] ?? '');
 $UserID = $get_user['id'];
 $Username = $get_user['username']?:'-';
 $isBanned = 'No';
-if ($get_user['step'] == 'banned') $isBanned = 'Yes';
+if (($get_user['step'] ?? '') == 'banned') $isBanned = 'Yes';
 $isPremium = 'No';
 if ($get_user['isPremium'] == 1) $isPremium = 'Yes';
 $Score = number_format($get_user['score']);
@@ -117,6 +136,48 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
+
+    /* Admin token helper (page-local):
+       - prompt to set token (stores in sessionStorage)
+       - automatically attaches X-Admin-Token to admin POSTs when present
+       - DOES NOT embed secret in source control
+    */
+    const adminBanner = document.createElement('div');
+    adminBanner.id = 'agecoin-admin-token-banner';
+    adminBanner.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:9999;';
+    document.body.appendChild(adminBanner);
+
+    function updateAdminTokenBanner(){
+        const token = sessionStorage.getItem('agecoin_admin_token');
+        adminBanner.innerHTML = '';
+        const btn = document.createElement('button');
+        btn.className = 'bg-yellow-500 text-black px-3 py-2 rounded-md shadow-md';
+        btn.onclick = () => setAdminTokenPrompt();
+        btn.textContent = token ? 'Admin token (set) — change' : 'Set admin token (required)';
+        adminBanner.appendChild(btn);
+        if (token){
+            const clr = document.createElement('button');
+            clr.className = 'ml-2 bg-red-500 text-white px-2 py-2 rounded-md';
+            clr.textContent = 'Clear';
+            clr.onclick = () => { sessionStorage.removeItem('agecoin_admin_token'); updateAdminTokenBanner(); };
+            adminBanner.appendChild(clr);
+        }
+    }
+
+    function setAdminTokenPrompt(){
+        const v = prompt('Enter AGECOIN_ADMIN_TOKEN (will be stored in this browser session only)');
+        if (v && v.trim()) {
+            sessionStorage.setItem('agecoin_admin_token', v.trim());
+        }
+        updateAdminTokenBanner();
+    }
+
+    function getAdminHeaders(){
+        const t = sessionStorage.getItem('agecoin_admin_token');
+        return t ? { 'X-Admin-Token': t } : {};
+    }
+
+    updateAdminTokenBanner();
 });
 
 
@@ -134,9 +195,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const userId = new URLSearchParams(window.location.search).get('q');
                 fetch('./api.php', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
+                    headers: Object.assign({'Content-Type': 'application/x-www-form-urlencoded'}, getAdminHeaders()),
                     body: `q=${userId}&action=banUser`
                 })
                 .then(response => response.json())
@@ -182,9 +241,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const userId = new URLSearchParams(window.location.search).get('q');
             fetch('./api.php', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                },
+                headers: Object.assign({'Content-Type': 'application/x-www-form-urlencoded'}, getAdminHeaders()),
                 body: `q=${userId}&action=unbanUser`
             })
             .then(response => response.json())
@@ -234,9 +291,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const userId = new URLSearchParams(window.location.search).get('q');
                 fetch('./api.php', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
+                    headers: Object.assign({'Content-Type': 'application/x-www-form-urlencoded'}, getAdminHeaders()),
                     body: `q=${userId}&action=changeUserScore&newScore=${newScore}`
                 })
                 .then(response => response.json())
@@ -287,9 +342,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const userId = new URLSearchParams(window.location.search).get('q');
                 return fetch('./api.php', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
+                    headers: Object.assign({'Content-Type': 'application/x-www-form-urlencoded'}, getAdminHeaders()),
                     body: `q=${userId}&action=sendMessageToUser&text=${encodeURIComponent(message)}`
                 })
                 .then(response => {

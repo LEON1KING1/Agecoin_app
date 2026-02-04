@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v4
+        with:
+          php-version: '8.1'
+      - name: Create release artifact (zip)
+        run: |
+          tag=${GITHUB_REF##refs/tags/}
+          mkdir -p release
+          zip -r "release/${tag}.zip" . -x "**/vendor/**" "**/.git/**" "**/node_modules/**" "**/storage/**" "**/tests/**"
+      - name: Upload release artifact
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: release/${{ github.ref_name }}.zip
+          asset_name: ${{ github.ref_name }}.zip
+          asset_content_type: application/zip

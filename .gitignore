@@ -1,0 +1,28 @@
+# Sensitive / environment
+.env
+.env.*
+bot/config.php
+*.sql
+*.sql.gz
+# runtime/telegram data (do not track)
+api/join/tdata.txt
+
+# Dependencies
+node_modules/
+vendor/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Logs
+*.log
+coverage/
+
+# Build output
+dist/
+build/
+
+# Assets maps
+assets/*.map
