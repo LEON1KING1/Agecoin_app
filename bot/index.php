@@ -15,19 +15,20 @@ die;
 
 
 $update = json_decode(file_get_contents('php://input'));
-if(isset($update->message)) {
-@$msg = $update->message->text;
-@$chat_id = $update->message->chat->id;
-@$from_id = $update->message->from->id;
-@$first_name = $update->message->from->first_name;
-@$last_name = $update->message->from->last_name?:null;
-@$username = $update->message->from->username?:null;
-@$is_premium = $update->message->from->is_premium;
-@$language_code = $update->message->from->language_code?:'en';
-@$chat_type = $update->message->chat->type;
-@$message_id = $update->message->message_id;
-@$reply_message_id = $update->message->reply_to_message->message_id?:null;
-}
+$msg = $chat_id = $from_id = $first_name = $last_name = $username = $is_premium = $language_code = $chat_type = $message_id = $reply_message_id = null;
+if (isset($update->message) && is_object($update->message)) {
+    $msg = isset($update->message->text) ? (string)$update->message->text : '';
+    $chat_id = isset($update->message->chat->id) ? (int)$update->message->chat->id : null;
+    $from_id = isset($update->message->from->id) ? (int)$update->message->from->id : null;
+    $first_name = $update->message->from->first_name ?? null;
+    $last_name = $update->message->from->last_name ?? null;
+    $username = $update->message->from->username ?? null;
+    $is_premium = !empty($update->message->from->is_premium) ? 1 : 0;
+    $language_code = $update->message->from->language_code ?? 'en';
+    $chat_type = $update->message->chat->type ?? null;
+    $message_id = isset($update->message->message_id) ? (int)$update->message->message_id : null;
+    $reply_message_id = isset($update->message->reply_to_message->message_id) ? (int)$update->message->reply_to_message->message_id : null;
+} 
 
 
 if($chat_type !== 'private'){
@@ -91,7 +92,9 @@ if(explode(' ', $msg)[0] === '/start' and is_numeric(explode(' ', $msg)[1]) and 
     $now = time();
     $invites = [];
     if (is_readable($rlf)) {
-        $invites = json_decode(@file_get_contents($rlf) ?: '[]', true) ?: [];
+        $raw = file_get_contents($rlf);
+        $invites = $raw ? json_decode($raw, true) : [];
+        if (!is_array($invites)) $invites = [];
         $invites = array_filter($invites, function($t) use($now){ return ($t > $now - 3600); });
     }
     if (count($invites) > 30) {
@@ -101,7 +104,9 @@ if(explode(' ', $msg)[0] === '/start' and is_numeric(explode(' ', $msg)[1]) and 
     }
 
     $invites[] = $now;
-    @file_put_contents($rlf, json_encode($invites), LOCK_EX);
+    if (file_put_contents($rlf, json_encode($invites), LOCK_EX) === false) {
+        error_log('Failed to write invite-rate file: ' . $rlf);
+    }
 
     $time = time();
     $age = GetAge($from_id);
@@ -208,7 +213,10 @@ die;
 }
 
 if($msg === 'Back To User Mode ↪️'){
-$MySQLi->query("UPDATE `users` SET `step` = null WHERE `id` = '{$from_id}' LIMIT 1");
+$stmt = $MySQLi->prepare('UPDATE `users` SET `step` = NULL WHERE `id` = ? LIMIT 1');
+$stmt->bind_param('i', $from_id);
+$stmt->execute();
+$stmt->close();
 $message_id_temp = LampStack('sendMessage',[
 'chat_id' => $from_id,
 'text' => '<b>...</b>',
@@ -281,7 +289,10 @@ $panel_menu = json_encode([
 
 //			admin panel			//
 if($msg === '/admin' or $msg === '🔙'){
-$MySQLi->query("UPDATE `users` SET `step` = null WHERE `id` = '{$from_id}' LIMIT 1");
+$stmt = $MySQLi->prepare('UPDATE `users` SET `step` = NULL WHERE `id` = ? LIMIT 1');
+$stmt->bind_param('i', $from_id);
+$stmt->execute();
+$stmt->close();
 LampStack('sendMessage',[
 'chat_id' => $from_id,
 'text' => '<b>- welcome to admin menu :</b>',
@@ -334,7 +345,11 @@ die;
 
 //			Send Message To All			//
 if($msg === 'Send Message'){
-$MySQLi->query("UPDATE `users` SET `step` = 'SendToAll' WHERE `id` = '{$from_id}' LIMIT 1");
+$stmt = $MySQLi->prepare('UPDATE `users` SET `step` = ? WHERE `id` = ? LIMIT 1');
+$stepVal = 'SendToAll';
+$stmt->bind_param('si', $stepVal, $from_id);
+$stmt->execute();
+$stmt->close();
 LampStack('sendMessage',[
 'chat_id' => $from_id,
 'text' => '<b>Send a message to be sent to all users of the bot :</b>',
@@ -380,7 +395,11 @@ if(isset($update->message) and ($UserDataBase['step'] ?? '') === 'SendToAll'){
 
 //			Forward Message To All			//
 if($msg === 'Forward Message'){
-$MySQLi->query("UPDATE `users` SET `step` = 'ForToAll' WHERE `id` = '{$from_id}' LIMIT 1");
+$stmt = $MySQLi->prepare('UPDATE `users` SET `step` = ? WHERE `id` = ? LIMIT 1');
+$stepVal = 'ForToAll';
+$stmt->bind_param('si', $stepVal, $from_id);
+$stmt->execute();
+$stmt->close();
 LampStack('sendMessage',[
 'chat_id' => $from_id,
 'text' => '<b>Forward a message to be forward to all users of the bot :</b>',
@@ -425,7 +444,11 @@ if(isset($update->message) and ($UserDataBase['step'] ?? '') === 'ForToAll'){
 
 //			Turn On Maintenance			//
 if($msg === 'Turn On Maintenance'){
-$MySQLi->query("UPDATE `users` SET `step` = 'GetMaintenanceTime' WHERE `id` = '{$from_id}' LIMIT 1");
+$stmt = $MySQLi->prepare('UPDATE `users` SET `step` = ? WHERE `id` = ? LIMIT 1');
+$stepVal = 'GetMaintenanceTime';
+$stmt->bind_param('si', $stepVal, $from_id);
+$stmt->execute();
+$stmt->close();
 LampStack('sendMessage',[
 'chat_id' => $from_id,
 'text' => '<b>Please give me a time to be on maintenance mode in minute :</b>',
@@ -443,7 +466,11 @@ die;
 }
 
 if(is_numeric($msg) and $UserDataBase['step'] === 'GetMaintenanceTime'){
-$MySQLi->query("UPDATE `users` SET `step` = '' WHERE `id` = '{$from_id}' LIMIT 1");
+$stmt = $MySQLi->prepare('UPDATE `users` SET `step` = ? WHERE `id` = ? LIMIT 1');
+$empty = '';
+$stmt->bind_param('si', $empty, $from_id);
+$stmt->execute();
+$stmt->close();
 $time = round((microtime(true) * 1000) + ($msg * 60 * 1000));
 file_put_contents('.maintenance.txt', $time);
 LampStack('sendMessage',[

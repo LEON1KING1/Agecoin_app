@@ -11,8 +11,13 @@ header("Pragma: no-cache");
 header("Expires: 0");
 
 date_default_timezone_set('Asia/Tehran');
-ini_set("log_errors", "off");
-error_reporting(0);
+// Enable safe error handling: log errors, don't display in production, allow display in development
+$__agecoin_log_path = __DIR__ . '/../storage/logs/php-error.log';
+@mkdir(dirname($__agecoin_log_path), 0750, true);
+ini_set('display_errors', getenv('APP_ENV') === 'development' ? '1' : '0');
+ini_set('log_errors', '1');
+ini_set('error_log', is_writable(dirname($__agecoin_log_path)) ? $__agecoin_log_path : 'syslog');
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT);
 
 // Load sensitive configuration from environment variables. Do NOT commit secrets to git.
 $apiKey = getenv('AGECOIN_BOT_APIKEY') ?: '';

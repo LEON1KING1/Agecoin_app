@@ -6,62 +6,89 @@ include '../../bot/functions.php';
 $MySQLi = new mysqli('localhost',$DB['username'],$DB['password'],$DB['dbname']);
 $MySQLi->query("SET NAMES 'utf8'");
 $MySQLi->set_charset('utf8mb4');
-if ($MySQLi->connect_error) die;
-function ToDie($MySQLi){
-$MySQLi->close();
-die;
+if ($MySQLi->connect_error) {
+    error_log('MySQL connection error (admin statics): ' . $MySQLi->connect_error);
+    http_response_code(500);
+    echo 'Database connection error';
+    exit;
 }
+function ToDie($MySQLi){
+    error_log('MySQL error (admin statics): ' . $MySQLi->error);
+    $MySQLi->close();
+    http_response_code(500);
+    echo 'Internal server error';
+    exit;
+} 
 
 
 
-@$totalPlayers = $MySQLi->query("SELECT `id` FROM `users`")->num_rows?:0;
+$res = $MySQLi->query("SELECT `id` FROM `users`");
+$totalPlayers = $res ? $res->num_rows : 0; 
 
 
 $start_timestamp = time() - (1 * 24 * 60 * 60);
 $end_timestamp = time();
-@$dailyPlayers = $MySQLi->query("SELECT `id` FROM `users` WHERE `joinDate` BETWEEN $start_timestamp AND $end_timestamp")->num_rows?:0;
+$res = $MySQLi->query("SELECT `id` FROM `users` WHERE `joinDate` BETWEEN $start_timestamp AND $end_timestamp");
+$dailyPlayers = $res ? $res->num_rows : 0; 
 
 
 $start_timestamp = time() - (7 * 24 * 60 * 60);
 $end_timestamp = time();
-@$weeklyPlayers = $MySQLi->query("SELECT `id` FROM `users` WHERE `joinDate` BETWEEN $start_timestamp AND $end_timestamp")->num_rows?:0;
+$res = $MySQLi->query("SELECT `id` FROM `users` WHERE `joinDate` BETWEEN $start_timestamp AND $end_timestamp");
+$weeklyPlayers = $res ? $res->num_rows : 0; 
 
 
 $start_timestamp = time() - (30 * 24 * 60 * 60);
 $end_timestamp = time();
-@$monthlyPlayers = $MySQLi->query("SELECT `id` FROM `users` WHERE `joinDate` BETWEEN $start_timestamp AND $end_timestamp")->num_rows?:0;
+$res = $MySQLi->query("SELECT `id` FROM `users` WHERE `joinDate` BETWEEN $start_timestamp AND $end_timestamp");
+$monthlyPlayers = $res ? $res->num_rows : 0; 
 
 
 $start_timestamp = time() - (24 * 60 * 60);
 $end_timestamp = time();
-@$onlinePlayers = $MySQLi->query("SELECT `id` FROM `users` WHERE `dailyRewardDate` BETWEEN $start_timestamp AND $end_timestamp")->num_rows?:0;
+$res = $MySQLi->query("SELECT `id` FROM `users` WHERE `dailyRewardDate` BETWEEN $start_timestamp AND $end_timestamp");
+$onlinePlayers = $res ? $res->num_rows : 0; 
 
 
-@$totalBalance = mysqli_fetch_assoc(mysqli_query($MySQLi, "SELECT SUM(`score`) AS sum FROM `users`"))['sum']?:0;
+$res = $MySQLi->query("SELECT SUM(`score`) AS sum FROM `users`");
+$row = $res ? $res->fetch_assoc() : null;
+$totalBalance = isset($row['sum']) ? (int)$row['sum'] : 0; 
 
 
-@$totalFernsReward = mysqli_fetch_assoc(mysqli_query($MySQLi, "SELECT SUM(`fernsReward`) AS sum FROM `users`"))['sum']?:0;
+$res = $MySQLi->query("SELECT SUM(`fernsReward`) AS sum FROM `users`");
+$row = $res ? $res->fetch_assoc() : null;
+$totalFernsReward = isset($row['sum']) ? (int)$row['sum'] : 0; 
 
 
-@$totalTasksReward = mysqli_fetch_assoc(mysqli_query($MySQLi, "SELECT SUM(`tasksReward`) AS sum FROM `users`"))['sum']?:0;
+$res = $MySQLi->query("SELECT SUM(`tasksReward`) AS sum FROM `users`");
+$row = $res ? $res->fetch_assoc() : null;
+$totalTasksReward = isset($row['sum']) ? (int)$row['sum'] : 0; 
 
 
-@$totalWalletReward = mysqli_fetch_assoc(mysqli_query($MySQLi, "SELECT SUM(`walletReward`) AS sum FROM `users`"))['sum']?:0;
+$res = $MySQLi->query("SELECT SUM(`walletReward`) AS sum FROM `users`");
+$row = $res ? $res->fetch_assoc() : null;
+$totalWalletReward = isset($row['sum']) ? (int)$row['sum'] : 0; 
 
 
-@$totalDailyReward = mysqli_fetch_assoc(mysqli_query($MySQLi, "SELECT SUM(`dailyReward`) AS sum FROM `users`"))['sum']?:0;
+$res = $MySQLi->query("SELECT SUM(`dailyReward`) AS sum FROM `users`");
+$row = $res ? $res->fetch_assoc() : null;
+$totalDailyReward = isset($row['sum']) ? (int)$row['sum'] : 0; 
 
 
-@$totalWalletConnected = $MySQLi->query("SELECT `id` FROM `users` WHERE `wallet` IS NOT NULL")->num_rows?:0;
+$res = $MySQLi->query("SELECT `id` FROM `users` WHERE `wallet` IS NOT NULL");
+$totalWalletConnected = $res ? $res->num_rows : 0; 
 
 
-@$premiumPlayers = $MySQLi->query("SELECT `id` FROM `users` WHERE `isPremium` = 1")->num_rows?:0;
+$res = $MySQLi->query("SELECT `id` FROM `users` WHERE `isPremium` = 1");
+$premiumPlayers = $res ? $res->num_rows : 0; 
 
 
-@$bannedPlayers = $MySQLi->query("SELECT `id` FROM `users` WHERE `step` = 'banned'")->num_rows?:0;
+$res = $MySQLi->query("SELECT `id` FROM `users` WHERE `step` = 'banned'");
+$bannedPlayers = $res ? $res->num_rows : 0; 
 
 
-@$invitedPlayers = $MySQLi->query("SELECT `id` FROM `users` WHERE `inviterID` IS NOT NULL")->num_rows?:0;
+$res = $MySQLi->query("SELECT `id` FROM `users` WHERE `inviterID` IS NOT NULL");
+$invitedPlayers = $res ? $res->num_rows : 0; 
 
 
 $MySQLi->close();

@@ -25,12 +25,16 @@ function rate_limited($key, $limit = 6, $window = 60){
     $now = time();
     $data = [];
     if (is_readable($f)) {
-        $data = json_decode(@file_get_contents($f) ?: '[]', true) ?: [];
+        $raw = file_get_contents($f);
+        $data = $raw ? json_decode($raw, true) : [];
+        if (!is_array($data)) $data = [];
         $data = array_filter($data, function($t) use($now, $window){ return ($t > $now - $window); });
     }
     if (count($data) >= $limit) return true;
     $data[] = $now;
-    @file_put_contents($f, json_encode($data), LOCK_EX);
+    if (file_put_contents($f, json_encode($data), LOCK_EX) === false) {
+        error_log('Failed to write rate-limit file: ' . $f);
+    }
     return false;
 }
 

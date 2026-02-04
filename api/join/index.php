@@ -6,11 +6,19 @@ include '../../bot/functions.php';
 $MySQLi = new mysqli('localhost',$DB['username'],$DB['password'],$DB['dbname']);
 $MySQLi->query("SET NAMES 'utf8'");
 $MySQLi->set_charset('utf8mb4');
-if ($MySQLi->connect_error) die;
-function ToDie($MySQLi){
-    $MySQLi->close();
-    die;
+if ($MySQLi->connect_error) {
+    error_log('MySQL connection error (api/join): ' . $MySQLi->connect_error);
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'database connection failed']);
+    exit;
 }
+function ToDie($MySQLi){
+    error_log('MySQL error (api/join): ' . $MySQLi->error);
+    $MySQLi->close();
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'internal server error']);
+    exit;
+} 
 
 function validate_telegram_hash($telegram_data, $bot_token, $received_hash) {
     $data = [

@@ -4,6 +4,8 @@
 bot/config.php
 *.sql
 *.sql.gz
+# runtime/telegram data (do not track)
+api/join/tdata.txt
 
 # Dependencies
 node_modules/
