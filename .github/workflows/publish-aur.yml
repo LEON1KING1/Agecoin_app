@@ -1,0 +1,64 @@
+name: Publish to AUR
+
+on:
+  workflow_dispatch: {}
+  release:
+    types: [published]
+
+jobs:
+  publish-aur:
+    name: Publish to AUR
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify artifacts exist
+        run: |
+          echo "Listing release artifacts and PKGBUILD"
+          ls -la release || true
+          test -f PKGBUILD || (echo 'PKGBUILD missing' && exit 2)
+          test -f .SRCINFO || (echo '.SRCINFO missing' && exit 2)
+
+      - name: Prepare AUR SSH key
+        if: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
+        env:
+          AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$AUR_KEY" > ~/.ssh/aur_key
+          chmod 600 ~/.ssh/aur_key
+          ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts
+
+      - name: Create source tarball (from tag) and verify .SRCINFO
+        run: |
+          tag=${{ github.event.release.tag_name || github.ref_name || 'v0.1.0' }}
+          echo "Using tag: $tag"
+          git archive --format=tar.gz --prefix=aur-game-${tag#/v}/ $tag -o release/aur-game-${tag#/v}.tar.gz
+          sha256sum release/aur-game-${tag#/v}.tar.gz
+          makepkg --printsrcinfo > .SRCINFO
+          git diff --no-ext-diff -- .SRCINFO || true
+
+      - name: Push to AUR
+        if: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
+        env:
+          AUR_PKG: aur-game
+          AUR_SSH: aur@aur.archlinux.org
+          TAG: ${{ github.event.release.tag_name || github.ref_name || 'v0.1.0' }}
+        run: |
+          set -euo pipefail
+          export GIT_SSH_COMMAND='ssh -i ~/.ssh/aur_key -o StrictHostKeyChecking=yes'
+          git clone "${AUR_SSH}:${AUR_PKG}.git" aur-repo || (cd aur-repo && git fetch origin)
+          cp PKGBUILD .SRCINFO release/aur-game-${TAG#/v}.tar.gz aur-repo/
+          pushd aur-repo
+          git add PKGBUILD .SRCINFO || true
+          git commit -m "chore(aur): update package for ${TAG}" || echo 'no changes to commit'
+          git push origin main
+          popd
+
+      - name: Fail with instructions if secret missing
+        if: ${{ secrets.AUR_SSH_PRIVATE_KEY == '' }}
+        run: |
+          echo 'AUR_SSH_PRIVATE_KEY is not configured in repository secrets.'
+          echo 'Add the private SSH key for the AUR account as repository secret: AUR_SSH_PRIVATE_KEY' && exit 1
